@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.Bootstrap.Docker;
@@ -20,9 +22,25 @@ namespace Petabridge.App
             pbm.RegisterCommandPalette(ClusterCommands.Instance);
             pbm.RegisterCommandPalette(RemoteCommands.Instance);
             pbm.Start(); // begin listening for PBM management commands
+
+            var persistentActor = actorSystem.ActorOf(Props.Create(() => new PersistentCountingActor("foo")), "foo");
+
+            var serializer = actorSystem.Serialization.FindSerializerForType(typeof(object));
+            actorSystem.Log.Info("Found serializer of type [{0}, Id={1}] for msg of type {2}", serializer, serializer.Identifier, typeof(object));
+
+            actorSystem.Scheduler.ScheduleTellRepeatedly(TimeSpan.FromSeconds(0.5), 
+                TimeSpan.FromSeconds(2), persistentActor, 
+                new PersistentCountingActor.MyVal(1), ActorRefs.NoSender);
+
+
+            actorSystem.Scheduler.Advanced.ScheduleRepeatedlyCancelable(TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5), () =>
+                {
+                    persistentActor.Ask<int>(PersistentCountingActor.GetSum.Instance)
+                        .ContinueWith(tr => Console.WriteLine(tr.Result));
+                });
             
             await actorSystem.WhenTerminated;
         }
     }
-   
 }
